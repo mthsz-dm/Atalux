@@ -1,0 +1,880 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Vila neo-medieval</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600&family=Chakra+Petch:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #05060d;
+    --panel: rgba(10, 10, 24, 0.86);
+    --line: rgba(150, 110, 255, 0.35);
+    --text: #e2e4ff;
+    --muted: #8f93ba;
+    --accent: #b07bff;
+    --ok: #33e1ff;
+    --warn: #ffc23d;
+    --crit: #ff3d6e;
+    --idle: #c9a6ff;
+    box-sizing: border-box;
+  }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #05060d; } }
+  :root[data-theme="dark"] { --bg: #05060d; }
+  *, *::before, *::after { box-sizing: inherit; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--bg); color: var(--text); font-family: "Chakra Petch", system-ui, sans-serif; overflow: hidden; }
+  #scene { position: fixed; inset: 0; }
+  canvas { display: block; }
+  .hud { position: fixed; pointer-events: none; z-index: 2; }
+  .hud > * { pointer-events: auto; }
+
+  .title { top: calc(16px + env(safe-area-inset-top, 0px)); left: 20px; max-width: 370px; }
+  .title h1 { font-family: "Cinzel", serif; font-size: 1.35rem; margin: 0; letter-spacing: 0.05em; color: var(--accent); text-shadow: 0 0 12px rgba(176,123,255,.6); }
+  .title p { margin: 2px 0 0; color: var(--muted); font-size: 0.85rem; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .actions button { font: inherit; font-size: 0.82rem; color: var(--text); cursor: pointer; background: var(--panel); border: 1px solid var(--line); padding: 6px 12px; }
+  .actions button:hover { border-color: var(--accent); }
+  .actions button.danger { border-color: rgba(255,61,110,.6); background: rgba(255,61,110,.12); }
+  .actions button:focus-visible { outline: 2px solid var(--ok); outline-offset: 2px; }
+  #feed { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 4px; font-size: 0.8rem; }
+  #feed li { display: flex; gap: 8px; background: var(--panel); padding: 4px 8px; border-left: 2px solid var(--line); }
+  #feed time { color: var(--muted); font-variant-numeric: tabular-nums; }
+  #feed .warn { color: #ffd27a; } #feed .crit { color: #ff8aa2; } #feed .idle { color: var(--idle); } #feed .ok { color: var(--ok); }
+
+  .info { top: calc(16px + env(safe-area-inset-top, 0px)); right: 20px; width: min(310px, calc(100vw - 40px)); background: var(--panel); border: 1px solid var(--line); padding: 16px; backdrop-filter: blur(6px); }
+  .info h2 { font-family: "Cinzel", serif; margin: 0 0 2px; font-size: 1.05rem; color: var(--accent); }
+  .info .sub { color: var(--muted); font-size: 0.8rem; margin-bottom: 12px; }
+  .info dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 0; font-size: 0.9rem; }
+  .info dt { color: var(--muted); }
+  .info dd { margin: 0; text-align: right; }
+  .info .note { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); font-size: 0.85rem; color: var(--muted); }
+  .info .hint { margin: 0; color: var(--muted); }
+
+  .legend { bottom: calc(16px + env(safe-area-inset-bottom, 0px)); left: 20px; background: var(--panel); border: 1px solid var(--line); padding: 10px 14px; display: grid; gap: 5px; font-size: 0.85rem; }
+  .legend span { display: flex; align-items: center; gap: 8px; }
+  .dot { width: 10px; height: 10px; background: currentColor; box-shadow: 0 0 8px currentColor; }
+  .legend hr { border: 0; border-top: 1px solid var(--line); margin: 4px 0; width: 100%; }
+  .help { bottom: calc(16px + env(safe-area-inset-bottom, 0px)); right: 20px; color: var(--muted); font-size: 0.8rem; }
+  @media (max-width: 680px) {
+    .legend, .help, #feed { display: none; }
+    .info { top: auto; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); right: 12px; width: calc(100vw - 24px); }
+  }
+</style>
+</head>
+<body>
+<div id="scene"></div>
+
+<div class="hud title">
+  <h1>Vila neo-medieval</h1>
+  <p>Protótipo visual com dados simulados</p>
+  <div class="actions">
+    <button id="btnHooded" type="button">Aparelho desconhecido entra</button>
+    <button id="btnAlert" type="button">Gerar alerta</button>
+    <button id="btnAttack" type="button" class="danger">Simular ataque</button>
+  </div>
+  <ul id="feed" aria-live="polite"></ul>
+</div>
+
+<div class="hud info" id="info"><p class="hint">Clique em uma casa, no castelo, no portão ou em uma pessoa.</p></div>
+
+<div class="hud legend" aria-label="Legenda">
+  <span><i class="dot" style="color:var(--ok)"></i>Normal</span>
+  <span><i class="dot" style="color:var(--warn)"></i>Atenção</span>
+  <span><i class="dot" style="color:var(--crit)"></i>Crítico</span>
+  <span><i class="dot" style="color:var(--accent)"></i>Muralha e barreira (firewall)</span>
+  <hr>
+  <span>🧑 Cidadão: aparelho conhecido</span>
+  <span>🥷 Encapuzado: aparelho desconhecido</span>
+</div>
+
+<div class="hud help">Arraste para girar · botão direito para mover · roda para zoom</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/MaskPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+<script>
+(function () {
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const COLORS = { ok: 0x33e1ff, warn: 0xffc23d, crit: 0xff3d6e };
+  const LABELS = { ok: 'Normal', warn: 'Atenção', crit: 'Crítico' };
+  const CSSVAR = { ok: 'var(--ok)', warn: 'var(--warn)', crit: 'var(--crit)' };
+  const INFRA = 0xa35bff;
+  const CELL = 2, DIV = 14, SIZE = CELL * DIV, WALL = 10;
+  const now = () => new Date().toTimeString().slice(0, 5);
+  const nowS = () => new Date().toTimeString().slice(0, 8);
+  const rand = (a, b) => a + Math.random() * (b - a);
+  const pick = arr => arr[Math.floor(Math.random() * arr.length)];
+
+  // ---------- Renderer / cena ----------
+  const container = document.getElementById('scene');
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  container.appendChild(renderer.domElement);
+
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x05060d);
+  scene.fog = new THREE.FogExp2(0x070818, 0.012);
+
+  const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 400);
+  camera.position.set(22, 20, 29);
+  const controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.target.set(0, 1, 0);
+  controls.enableDamping = true; controls.dampingFactor = 0.08;
+  controls.minDistance = 10; controls.maxDistance = 65;
+  controls.maxPolarAngle = Math.PI / 2.1;
+
+  scene.add(new THREE.HemisphereLight(0x5a5fb0, 0x0a0812, 0.5));
+  const moonLight = new THREE.DirectionalLight(0x8a7cff, 0.55);
+  moonLight.position.set(-25, 35, 12);
+  scene.add(moonLight);
+  const coreLight = new THREE.PointLight(0x7a5cff, 1.1, 16, 2);
+  coreLight.position.set(0, 5, 0);
+  scene.add(coreLight);
+
+  // estrelas e lua
+  const sp = [];
+  for (let i = 0; i < 700; i++) {
+    const v = new THREE.Vector3(rand(-1, 1), rand(-0.1, 1), rand(-1, 1)).normalize().multiplyScalar(160);
+    sp.push(v.x, v.y, v.z);
+  }
+  const starGeo = new THREE.BufferGeometry();
+  starGeo.setAttribute('position', new THREE.Float32BufferAttribute(sp, 3));
+  scene.add(new THREE.Points(starGeo, new THREE.PointsMaterial({ color: 0x9aa2ff, size: 0.6, fog: false })));
+  const moon = new THREE.Mesh(new THREE.SphereGeometry(5, 24, 24), new THREE.MeshBasicMaterial({ color: 0xc9b8ff, fog: false }));
+  moon.position.set(-70, 58, -90);
+  scene.add(moon);
+
+  // ---------- Materiais ----------
+  const M = {
+    stone: new THREE.MeshStandardMaterial({ color: 0x24242e, roughness: 0.95, flatShading: true }),
+    stoneDark: new THREE.MeshStandardMaterial({ color: 0x18181f, roughness: 0.95, flatShading: true }),
+    plaster: new THREE.MeshStandardMaterial({ color: 0x2c2a38, roughness: 0.9 }),
+    wood: new THREE.MeshStandardMaterial({ color: 0x1e1712, roughness: 0.9 }),
+    roof: new THREE.MeshStandardMaterial({ color: 0x1c1626, roughness: 0.85, flatShading: true }),
+    slate: new THREE.MeshStandardMaterial({ color: 0x1a1c2a, roughness: 0.8, flatShading: true }),
+    ground: new THREE.MeshStandardMaterial({ color: 0x0b0d17, roughness: 1 }),
+    rock: new THREE.MeshStandardMaterial({ color: 0x1b1922, roughness: 1, flatShading: true }),
+    leaf: new THREE.MeshStandardMaterial({ color: 0x0f1a1c, roughness: 1, flatShading: true }),
+    iron: new THREE.MeshStandardMaterial({ color: 0x15161c, roughness: 0.5, metalness: 0.7 }),
+    window: new THREE.MeshBasicMaterial({ color: 0x2f9fc4 }),
+  };
+  const infraEdge = new THREE.LineBasicMaterial({ color: INFRA });
+  const dimEdge = new THREE.LineBasicMaterial({ color: 0x3a2e6e });
+
+  const glowTex = (() => {
+    const c = document.createElement('canvas'); c.width = c.height = 64;
+    const g = c.getContext('2d');
+    const grd = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    grd.addColorStop(0, 'rgba(255,255,255,1)'); grd.addColorStop(0.25, 'rgba(255,255,255,0.5)'); grd.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = grd; g.fillRect(0, 0, 64, 64);
+    return new THREE.CanvasTexture(c);
+  })();
+  // textura com linhas horizontais (holograma)
+  const holoTex = (() => {
+    const c = document.createElement('canvas'); c.width = 32; c.height = 32;
+    const g = c.getContext('2d');
+    g.fillStyle = 'rgba(255,255,255,0.55)'; g.fillRect(0, 0, 32, 32);
+    g.fillStyle = 'rgba(255,255,255,1)';
+    for (let y = 0; y < 32; y += 4) g.fillRect(0, y, 32, 2);
+    g.strokeStyle = 'rgba(255,255,255,1)'; g.lineWidth = 2; g.strokeRect(1, 1, 30, 30);
+    const t = new THREE.CanvasTexture(c); t.magFilter = THREE.NearestFilter; return t;
+  })();
+
+  function box(w, h, d, mat, x, y, z, parent, edge) {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+    m.position.set(x, y, z); parent.add(m);
+    if (edge) addEdges(m, edge, parent);
+    return m;
+  }
+  function addEdges(mesh, mat, parent, thr) {
+    const e = new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry, thr || 1), mat);
+    e.position.copy(mesh.position); e.rotation.copy(mesh.rotation); e.scale.copy(mesh.scale);
+    e.raycast = () => {};
+    (parent || mesh.parent).add(e);
+    return e;
+  }
+
+  // ---------- Ilha flutuante ----------
+  const island = new THREE.Group();
+  scene.add(island);
+  const top = new THREE.Mesh(new THREE.BoxGeometry(SIZE, 1, SIZE), [M.rock, M.rock, M.ground, M.rock, M.rock, M.rock]);
+  top.position.y = -0.5; island.add(top);
+  addEdges(top, infraEdge, island);
+  const under = new THREE.ConeGeometry(SIZE * 0.66, 13, 9, 4);
+  const upos = under.attributes.position;
+  for (let i = 0; i < upos.count; i++) {
+    const y = upos.getY(i);
+    if (y < 6.4) { upos.setX(i, upos.getX(i) * rand(0.85, 1.12)); upos.setZ(i, upos.getZ(i) * rand(0.85, 1.12)); upos.setY(i, y + rand(-0.6, 0.6)); }
+  }
+  under.computeVertexNormals();
+  const underMesh = new THREE.Mesh(under, M.rock);
+  underMesh.rotation.x = Math.PI; underMesh.rotation.y = 0.3; underMesh.position.y = -7.4;
+  island.add(underMesh);
+  // veios de energia na rocha
+  const veins = new THREE.LineSegments(new THREE.EdgesGeometry(under, 25), new THREE.LineBasicMaterial({ color: 0x5b2fb0, transparent: true, opacity: 0.55 }));
+  veins.rotation.copy(underMesh.rotation); veins.position.copy(underMesh.position);
+  island.add(veins);
+  for (let i = 0; i < 6; i++) {
+    const r = new THREE.Mesh(new THREE.DodecahedronGeometry(rand(0.6, 1.4), 0), M.rock);
+    const a = rand(0, Math.PI * 2), d = rand(19, 24);
+    r.position.set(Math.cos(a) * d, rand(-6, -1), Math.sin(a) * d);
+    r.userData.float = rand(0, 6);
+    island.add(r);
+    const re = addEdges(r, dimEdge, island); re.userData.follow = r;
+  }
+  const grid = new THREE.GridHelper(SIZE, DIV, 0x2f8bff, 0x2f8bff);
+  grid.position.y = 0.012; grid.material.transparent = true; grid.material.opacity = 0.8;
+  island.add(grid);
+
+  // ---------- Lanternas e estandartes holográficos ----------
+  function makeLantern(parent, x, y, z, asset) {
+    box(0.16, 0.22, 0.16, M.iron, x, y, z, parent);
+    const flameMat = new THREE.MeshBasicMaterial({ color: COLORS[asset.state] });
+    const flame = new THREE.Mesh(new THREE.SphereGeometry(0.065, 8, 8), flameMat);
+    flame.position.set(x, y, z); parent.add(flame);
+    const sprMat = new THREE.SpriteMaterial({ map: glowTex, color: COLORS[asset.state], transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false });
+    const spr = new THREE.Sprite(sprMat);
+    spr.position.set(x, y, z); spr.scale.setScalar(1.0); spr.raycast = () => {};
+    parent.add(spr);
+    asset.lightMats.push(flameMat, sprMat);
+  }
+  function makeBanner(parent, x, y, z, asset, h) {
+    const pole = box(0.04, h, 0.04, M.iron, x, y + h / 2, z, parent);
+    const flagMat = new THREE.MeshBasicMaterial({ map: holoTex, color: COLORS[asset.state], transparent: true, opacity: 0.75, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false });
+    const flag = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.3), flagMat);
+    flag.position.set(x + 0.27, y + h - 0.17, z);
+    flag.raycast = () => {};
+    parent.add(flag);
+    asset.flagMats.push(flagMat);
+    asset.flags.push(flag);
+  }
+
+  // ---------- Ativos ----------
+  const assets = [];
+  const pickRoots = [];
+  function newAsset(o) {
+    Object.assign(o, { lightMats: [], flagMats: [], flags: [], edgeMat: new THREE.LineBasicMaterial({ color: COLORS[o.state] }) });
+    o.cpuTemp = 44 + Math.round(Math.random() * 12);
+    o.lastEvent = o.state === 'warn' ? 'Várias tentativas de login falhas' : 'Nenhum evento recente';
+    assets.push(o); return o;
+  }
+
+  const roofShape = new THREE.Shape();
+  roofShape.moveTo(-0.88, 0); roofShape.lineTo(0.88, 0); roofShape.lineTo(0, 0.72); roofShape.lineTo(-0.88, 0);
+  const roofGeo = new THREE.ExtrudeGeometry(roofShape, { depth: 1.5, bevelEnabled: false });
+  roofGeo.translate(0, 0, -0.75);
+
+  function buildHouse(a) {
+    const g = new THREE.Group();
+    g.position.set(a.pos[0], 0, a.pos[1]);
+    const E = a.edgeMat;
+    box(1.5, 0.7, 1.3, M.stone, 0, 0.35, 0, g, E);
+    box(1.42, 0.6, 1.22, M.plaster, 0, 1.0, 0, g, E);
+    [[-0.71, -0.61], [0.71, -0.61], [-0.71, 0.61], [0.71, 0.61]].forEach(([x, z]) => box(0.08, 0.62, 0.08, M.wood, x, 1.0, z, g));
+    const roof = new THREE.Mesh(roofGeo, M.roof); roof.position.y = 1.3; g.add(roof);
+    addEdges(roof, E, g);
+    box(0.32, 0.46, 0.05, M.wood, -0.2, 0.23, 0.66, g);
+    box(0.22, 0.2, 0.04, M.window, -0.38, 1.02, 0.62, g);
+    box(0.22, 0.2, 0.04, M.window, 0.38, 1.02, 0.62, g);
+    box(0.04, 0.2, 0.22, M.window, 0.72, 1.02, 0, g);
+    if (a.type === 'forge') {
+      box(0.3, 1.1, 0.3, M.stoneDark, 0.45, 1.75, -0.35, g, E);
+      const ember = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: 0xff6a1a, transparent: true, opacity: 0.75, blending: THREE.AdditiveBlending, depthWrite: false }));
+      ember.position.set(-0.2, 0.3, 0.75); ember.scale.setScalar(0.9); ember.raycast = () => {};
+      g.add(ember);
+    }
+    makeLantern(g, 0.38, 0.55, 0.74, a);
+    makeBanner(g, 0, 2.0, 0, a, 0.7);
+    g.userData.asset = a; a.group = g;
+    island.add(g); pickRoots.push(g);
+  }
+
+  [
+    { name: 'PC-Recepção', ip: '192.168.0.21', pos: [-7, -5], state: 'ok' },
+    { name: 'PC-Secretaria', ip: '192.168.0.22', pos: [-3, -7], state: 'ok' },
+    { name: 'PC-Laboratório 1', ip: '192.168.0.35', pos: [5, -7], state: 'warn' },
+    { name: 'PC-Laboratório 2', ip: '192.168.0.36', pos: [7, -1], state: 'ok' },
+    { name: 'Impressora', ip: '192.168.0.50', pos: [7, 5], state: 'ok', type: 'forge' },
+    { name: 'PC-Biblioteca', ip: '192.168.0.41', pos: [3, 7], state: 'ok' },
+    { name: 'PC-Direção', ip: '192.168.0.60', pos: [-7, 3], state: 'ok' },
+    { name: 'PC-Professores', ip: '192.168.0.61', pos: [-5, 7], state: 'ok' },
+  ].forEach(o => buildHouse(newAsset(Object.assign({ type: 'house' }, o))));
+
+  // ---------- Castelo (servidor central, 2x2) ----------
+  const merlons = [];
+  const castleA = newAsset({ type: 'castle', name: 'Servidor central', ip: '192.168.0.2', state: 'ok' });
+  const castle = new THREE.Group();
+  const CE = castleA.edgeMat;
+  box(3.9, 0.3, 3.9, M.stoneDark, 0, 0.15, 0, castle, CE);
+  [[0, -1.75, 2.6, 0.3], [0, 1.75, 2.6, 0.3], [-1.75, 0, 0.3, 2.6], [1.75, 0, 0.3, 2.6]].forEach(([x, z, w, d]) => {
+    box(w, 1.3, d, M.stone, x, 0.95, z, castle, CE);
+    for (let i = 0; i < 4; i++) {
+      const t = (i + 0.5) / 4 - 0.5;
+      merlons.push([x + (w > d ? t * w : 0), 1.72, z + (w > d ? 0 : t * d), 0.22]);
+    }
+  });
+  [[-1.65, -1.65], [1.65, -1.65], [1.65, 1.65], [-1.65, 1.65]].forEach(([x, z]) => {
+    const t = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.5, 2.3, 8), M.stone);
+    t.position.set(x, 1.45, z); castle.add(t); addEdges(t, CE, castle, 20);
+    const r = new THREE.Mesh(new THREE.ConeGeometry(0.62, 0.95, 8), M.slate);
+    r.position.set(x, 3.07, z); castle.add(r); addEdges(r, CE, castle, 20);
+  });
+  box(1.6, 3.0, 1.6, M.stone, 0, 1.8, 0, castle, CE);
+  for (let i = 0; i < 4; i++) {
+    const band = new THREE.Mesh(new THREE.BoxGeometry(1.64, 0.04, 1.64), new THREE.MeshBasicMaterial({ color: 0x8a5cff }));
+    band.position.y = 0.75 + i * 0.7; castle.add(band);
+  }
+  [[-0.6, -0.6], [0, -0.6], [0.6, -0.6], [-0.6, 0.6], [0, 0.6], [0.6, 0.6], [-0.6, 0], [0.6, 0]].forEach(([x, z]) => merlons.push([x, 3.47, z, 0.24]));
+  [0.81, -0.81].forEach(z => { box(0.2, 0.32, 0.04, M.window, -0.35, 2.3, z, castle); box(0.2, 0.32, 0.04, M.window, 0.35, 2.3, z, castle); });
+  box(0.6, 0.8, 0.06, M.wood, 0, 0.7, 1.92, castle);
+  makeLantern(castle, -0.55, 0.95, 1.98, castleA);
+  makeLantern(castle, 0.55, 0.95, 1.98, castleA);
+  makeBanner(castle, 0, 3.3, 0, castleA, 1.3);
+  const halo = new THREE.Mesh(new THREE.TorusGeometry(1.25, 0.035, 8, 64), new THREE.MeshBasicMaterial({ color: 0xd08bff }));
+  halo.rotation.x = Math.PI / 2; halo.position.y = 4.9; castle.add(halo);
+  castle.userData.asset = castleA; castleA.group = castle;
+  island.add(castle); pickRoots.push(castle);
+
+  // ---------- Muralha de pedra ----------
+  const WALL_H = 1.7, WALL_T = 0.5;
+  const walls = new THREE.Group();
+  function wallSeg(x1, z1, x2, z2) {
+    const len = Math.hypot(x2 - x1, z2 - z1);
+    const horiz = Math.abs(z2 - z1) < 0.01;
+    box(horiz ? len : WALL_T, WALL_H, horiz ? WALL_T : len, M.stone, (x1 + x2) / 2, WALL_H / 2, (z1 + z2) / 2, walls, infraEdge);
+    const n = Math.floor(len / 0.75);
+    for (let i = 0; i < n; i++) {
+      const t = (i + 0.5) / n;
+      merlons.push([x1 + (x2 - x1) * t, WALL_H + 0.17, z1 + (z2 - z1) * t, 0.34]);
+    }
+  }
+  wallSeg(-WALL, -WALL, WALL, -WALL);
+  wallSeg(-WALL, -WALL, -WALL, WALL);
+  wallSeg(WALL, -WALL, WALL, WALL);
+  wallSeg(-WALL, WALL, -1.2, WALL);
+  wallSeg(1.2, WALL, WALL, WALL);
+
+  const towerA = newAsset({ type: 'tower', name: 'Câmera do pátio', ip: '192.168.0.70', state: 'ok' });
+  [[-WALL, -WALL], [WALL, -WALL], [WALL, WALL], [-WALL, WALL]].forEach(([x, z], i) => {
+    const tg = i === 0 ? new THREE.Group() : walls;
+    const E = i === 0 ? towerA.edgeMat : infraEdge;
+    const t = new THREE.Mesh(new THREE.CylinderGeometry(0.85, 0.95, 2.9, 8), M.stone);
+    t.position.set(x, 1.45, z); tg.add(t); addEdges(t, E, tg, 20);
+    const r = new THREE.Mesh(new THREE.ConeGeometry(1.1, 1.3, 8), M.slate);
+    r.position.set(x, 3.55, z); tg.add(r); addEdges(r, E, tg, 20);
+    const crystal = new THREE.Mesh(new THREE.OctahedronGeometry(0.22, 0), new THREE.MeshBasicMaterial({ color: i === 0 ? COLORS.ok : 0xc27bff }));
+    crystal.position.set(x, 4.55, z); crystal.userData.spin = true; tg.add(crystal);
+    if (i === 0) {
+      towerA.lightMats.push(crystal.material);
+      makeLantern(tg, x + 0.6, 2.5, z + 0.6, towerA);
+      tg.userData.asset = towerA; towerA.group = tg;
+      island.add(tg); pickRoots.push(tg);
+    }
+  });
+
+  const gateA = newAsset({ type: 'gate', name: 'Portão (roteador)', ip: '192.168.0.1', state: 'ok' });
+  const gate = new THREE.Group();
+  [-1.7, 1.7].forEach(x => {
+    box(1.0, 2.7, 1.0, M.stone, x, 1.35, WALL, gate, gateA.edgeMat);
+    [[-0.32, -0.32], [0.32, -0.32], [0.32, 0.32], [-0.32, 0.32]].forEach(([dx, dz]) => merlons.push([x + dx, 2.87, WALL + dz, 0.26]));
+    makeLantern(gate, x + (x < 0 ? 0.25 : -0.25), 1.4, WALL + 0.62, gateA);
+  });
+  box(2.4, 0.55, 0.7, M.stone, 0, 2.1, WALL, gate, gateA.edgeMat);
+  const portcullisMat = new THREE.MeshBasicMaterial({ color: 0x6fe8ff, transparent: true, opacity: 0.6 });
+  for (let i = -2; i <= 2; i++) box(0.035, 0.75, 0.035, portcullisMat, i * 0.42, 1.48, WALL, gate);
+  gate.userData.asset = gateA; gateA.group = gate;
+  island.add(gate); pickRoots.push(gate);
+  island.add(walls);
+
+  const merlonMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), M.stone, merlons.length);
+  const tmp = new THREE.Object3D();
+  merlons.forEach(([x, y, z, s], i) => { tmp.position.set(x, y, z); tmp.scale.setScalar(s); tmp.updateMatrix(); merlonMesh.setMatrixAt(i, tmp.matrix); });
+  island.add(merlonMesh);
+
+  // ---------- Barreira de luz em cima da muralha (firewall) ----------
+  const MAX_HITS = 8, BH = 2.4;
+  const barrierMat = new THREE.ShaderMaterial({
+    uniforms: {
+      uColor: { value: new THREE.Color(0xb14dff) }, uHitColor: { value: new THREE.Color(0xff2d55) },
+      uTime: { value: 0 }, uClock: { value: 0 },
+      uHits: { value: Array.from({ length: MAX_HITS }, () => new THREE.Vector4(0, 0, 0, -100)) },
+    },
+    vertexShader: `varying vec2 vUv; varying vec3 vWorld;
+      void main(){ vUv = uv; vec4 w = modelMatrix * vec4(position,1.0); vWorld = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
+    fragmentShader: `uniform vec3 uColor; uniform vec3 uHitColor; uniform float uTime; uniform float uClock; uniform vec4 uHits[${MAX_HITS}];
+      varying vec2 vUv; varying vec3 vWorld;
+      void main(){
+        float fade = pow(1.0 - vUv.y, 1.6);
+        float scan = 0.5 + 0.5 * sin(vUv.y * 20.0 - uTime * 2.5);
+        float hex = step(0.92, fract(vUv.x * 40.0)) * 0.25;
+        float a = fade * (0.18 + 0.2 * scan + hex);
+        float hit = 0.0;
+        for (int i = 0; i < ${MAX_HITS}; i++) {
+          float age = uClock - uHits[i].w;
+          if (age > 0.0 && age < 1.2) {
+            float d = distance(vWorld, uHits[i].xyz);
+            hit += exp(-pow((d - age * 3.2) * 3.5, 2.0)) * (1.0 - age / 1.2) + exp(-d * d * 2.5) * max(0.0, 1.0 - age * 2.2) * 1.4;
+          }
+        }
+        hit = clamp(hit, 0.0, 1.0);
+        gl_FragColor = vec4(mix(uColor, uHitColor, hit), a + hit * 0.75);
+      }`,
+    transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending,
+  });
+  [[0, -WALL, 0], [0, WALL, 0], [-WALL, 0, Math.PI / 2], [WALL, 0, Math.PI / 2]].forEach(([x, z, r]) => {
+    const pl = new THREE.Mesh(new THREE.PlaneGeometry(WALL * 2, BH), barrierMat);
+    pl.position.set(x, WALL_H + 0.35 + BH / 2, z); pl.rotation.y = r; pl.raycast = () => {};
+    island.add(pl);
+  });
+
+  // ---------- Árvores ----------
+  for (let i = 0; i < 16; i++) {
+    let x, z;
+    do { const a = rand(0, Math.PI * 2), d = rand(11.3, 13.4); x = Math.cos(a) * d; z = Math.sin(a) * d; }
+    while ((Math.abs(x) < 2 && z > 0) || Math.abs(x) > 13.5 || Math.abs(z) > 13.5);
+    const tr = new THREE.Group(); tr.position.set(x, 0, z);
+    box(0.14, 0.5, 0.14, M.wood, 0, 0.25, 0, tr);
+    const c1 = new THREE.Mesh(new THREE.ConeGeometry(0.6, 1.1, 6), M.leaf); c1.position.y = 0.9; tr.add(c1); addEdges(c1, dimEdge, tr, 20);
+    const c2 = new THREE.Mesh(new THREE.ConeGeometry(0.45, 0.9, 6), M.leaf); c2.position.y = 1.45; tr.add(c2); addEdges(c2, dimEdge, tr, 20);
+    tr.scale.setScalar(rand(0.8, 1.25));
+    island.add(tr);
+  }
+
+  // ---------- Trilhas de dados (casas → castelo) ----------
+  const trails = [];
+  assets.filter(a => a.type === 'house' || a.type === 'forge').forEach(a => {
+    const [x, z] = a.pos;
+    const ex = x > 0 ? 2.2 : -2.2;            // entrada lateral do castelo
+    const pts = [[x, z], [x, 0], [ex, 0]].map(([px, pz]) => new THREE.Vector3(px, 0.04, pz));
+    const lineMat = new THREE.LineBasicMaterial({ color: COLORS[a.state], transparent: true, opacity: 0.35 });
+    island.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), lineMat));
+    const pulseMat = new THREE.MeshBasicMaterial({ color: COLORS[a.state] });
+    const pulse = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 8), pulseMat);
+    island.add(pulse);
+    const len1 = pts[0].distanceTo(pts[1]), len2 = pts[1].distanceTo(pts[2]);
+    trails.push({ a, pts, pulse, len1, total: len1 + len2, phase: Math.random() });
+    a.lightMats.push(lineMat, pulseMat);
+  });
+
+  function applyState(a) {
+    const c = COLORS[a.state];
+    a.lightMats.forEach(m => m.color.setHex(c));
+    a.flagMats.forEach(m => m.color.setHex(c));
+    a.edgeMat.color.setHex(c);
+  }
+
+  // ---------- Pessoas ----------
+  const INTERS = [];
+  for (let x = -8; x <= 8; x += 2) for (let z = -8; z <= 8; z += 2)
+    if (!(Math.abs(x) <= 2 && Math.abs(z) <= 2)) INTERS.push([x, z]);
+  function segOk(x1, z1, x2, z2) {
+    const n = Math.max(1, Math.ceil(Math.hypot(x2 - x1, z2 - z1) / 0.4));
+    for (let i = 0; i <= n; i++) {
+      const x = x1 + (x2 - x1) * i / n, z = z1 + (z2 - z1) * i / n;
+      if (Math.abs(x) < 2.4 && Math.abs(z) < 2.4) return false;
+    }
+    return true;
+  }
+  function plan(from, to) {
+    const opts = Math.random() < 0.5 ? [[to[0], from[1]], [from[0], to[1]]] : [[from[0], to[1]], [to[0], from[1]]];
+    for (const mid of opts) if (segOk(from[0], from[1], mid[0], mid[1]) && segOk(mid[0], mid[1], to[0], to[1])) return [mid, to];
+    return null;
+  }
+
+  const tunic = [0x2a3a5a, 0x3a2a55, 0x24464f, 0x45304a];
+  function makePerson(hooded) {
+    const g = new THREE.Group();
+    const inner = new THREE.Group(); g.add(inner);
+    const bodyMat = new THREE.MeshStandardMaterial({ color: hooded ? 0x0d0c12 : pick(tunic), roughness: 1, transparent: true });
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.3, 0.75, 8), bodyMat);
+    body.position.y = 0.375; inner.add(body);
+    const mats = [bodyMat];
+    let glitchMats = [];
+    if (hooded) {
+      const hood = new THREE.Mesh(new THREE.ConeGeometry(0.21, 0.5, 8), bodyMat);
+      hood.position.y = 0.97; inner.add(hood);
+      const edgeMat = new THREE.LineBasicMaterial({ color: 0xc9a6ff, transparent: true });
+      addEdges(body, edgeMat, inner, 20); addEdges(hood, edgeMat, inner, 20);
+      const eyeMat = new THREE.MeshBasicMaterial({ color: 0xd2b8ff, transparent: true });
+      [-0.06, 0.06].forEach(x => { const e = new THREE.Mesh(new THREE.SphereGeometry(0.025, 6, 6), eyeMat); e.position.set(x, 0.88, 0.15); inner.add(e); });
+      const aura = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: 0x9d6bff, transparent: true, opacity: 0.45, blending: THREE.AdditiveBlending, depthWrite: false }));
+      aura.position.y = 0.6; aura.scale.setScalar(1.3); aura.raycast = () => {}; inner.add(aura);
+      mats.push(edgeMat, eyeMat);
+      glitchMats = [edgeMat, eyeMat, aura.material];
+    } else {
+      const headMat = new THREE.MeshStandardMaterial({ color: 0x8a7a72, roughness: 1, transparent: true });
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.14, 10, 10), headMat);
+      head.position.y = 0.88; inner.add(head);
+      mats.push(headMat);
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.31, 0.012, 6, 24), new THREE.MeshBasicMaterial({ color: 0x33e1ff, transparent: true, opacity: 0.8 }));
+      ring.rotation.x = Math.PI / 2; ring.position.y = 0.04; inner.add(ring);
+      mats.push(ring.material);
+      const dev = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.1, 0.02), new THREE.MeshBasicMaterial({ color: 0x8fe3ff }));
+      dev.position.set(0.16, 0.5, 0.18); inner.add(dev);
+    }
+    return { g, inner, mats, glitchMats };
+  }
+
+  const people = [];
+  const OWNERS = [
+    ['Celular — Ana', 'Ana (secretaria)'], ['Celular — Pedro', 'Pedro (laboratório)'],
+    ['Notebook — Prof. Lima', 'Prof. Lima'], ['Tablet — Biblioteca', 'Biblioteca'],
+    ['Celular — Júlia', 'Júlia (direção)'], ['Notebook — Prof. Souza', 'Prof. Souza'],
+  ];
+  const randMac = () => Array.from({ length: 6 }, () => Math.floor(Math.random() * 256).toString(16).padStart(2, '0')).join(':');
+
+  function spawnPerson(hooded, entering, info) {
+    const parts = makePerson(hooded);
+    const p = Object.assign(parts, {
+      type: hooded ? 'hooded' : 'citizen', group: parts.g,
+      name: hooded ? 'Aparelho desconhecido' : info[0], owner: hooded ? null : info[1], ownerInfo: info,
+      mac: randMac(), since: now(), speed: hooded ? 0.9 : rand(1.0, 1.4), wait: rand(0, 2),
+      path: [], cur: null, leaving: false, fade: entering ? 0 : 1, phase: rand(0, 6),
+      glitch: 0, nextGlitch: rand(1, 3),
+    });
+    if (entering) { p.g.position.set(0, 0, 13.2); p.cur = [0, 13.2]; p.path = [[0, 8]]; p.wait = 0; }
+    else { const s = pick(INTERS); p.g.position.set(s[0], 0, s[1]); p.cur = s; }
+    p.g.userData.asset = p;
+    island.add(p.g); pickRoots.push(p.g);
+    people.push(p);
+    return p;
+  }
+  function removePerson(p) {
+    island.remove(p.g);
+    pickRoots.splice(pickRoots.indexOf(p.g), 1);
+    people.splice(people.indexOf(p), 1);
+    if (selected === p) { selected = null; renderInfo(); }
+  }
+  const away = [];
+  OWNERS.forEach((o, i) => { if (i < 5) spawnPerson(false, false, o); else away.push(o); });
+
+  function updatePeople(t, dt) {
+    for (let i = people.length - 1; i >= 0; i--) {
+      const p = people[i];
+      if (p.fade < 1 && !p.leaving) p.fade = Math.min(1, p.fade + dt * 1.5);
+      p.mats.forEach(m => { m.opacity = p.fade * (m.userData.base || 1); });
+
+      // falha digital do encapuzado
+      if (p.type === 'hooded' && !reduceMotion) {
+        p.nextGlitch -= dt;
+        if (p.nextGlitch <= 0) { p.glitch = rand(0.12, 0.3); p.nextGlitch = rand(1.2, 3.5); }
+        if (p.glitch > 0) {
+          p.glitch -= dt;
+          p.inner.position.x = rand(-0.12, 0.12);
+          p.inner.scale.set(rand(0.8, 1.3), rand(0.85, 1.15), 1);
+          const red = Math.random() < 0.5;
+          p.glitchMats.forEach(m => m.color.setHex(red ? 0xff3d6e : 0x33e1ff));
+          p.inner.visible = Math.random() > 0.15;
+        } else {
+          p.inner.position.x = 0; p.inner.scale.set(1, 1, 1); p.inner.visible = true;
+          p.glitchMats.forEach((m, k) => m.color.setHex(k === 2 ? 0x9d6bff : k === 1 ? 0xd2b8ff : 0xc9a6ff));
+        }
+      }
+
+      if (p.wait > 0) { p.wait -= dt; p.g.position.y = 0; continue; }
+      if (!p.path.length) {
+        if (p.leaving) { p.fade -= dt * 1.5; if (p.fade <= 0) removePerson(p); continue; }
+        const r = plan(p.cur, pick(INTERS)); if (r) p.path = r;
+        continue;
+      }
+      const tgt = p.path[0];
+      const dx = tgt[0] - p.g.position.x, dz = tgt[1] - p.g.position.z;
+      const d = Math.hypot(dx, dz), step = p.speed * dt;
+      if (d < 0.001) p.path.shift();
+      else {
+        p.g.rotation.y = Math.atan2(dx, dz);
+        if (d <= step) { p.g.position.x = tgt[0]; p.g.position.z = tgt[1]; p.cur = tgt; p.path.shift(); if (!p.path.length && !p.leaving) p.wait = rand(0.6, 3); }
+        else { p.g.position.x += dx / d * step; p.g.position.z += dz / d * step; }
+      }
+      p.g.position.y = reduceMotion ? 0 : Math.abs(Math.sin((t + p.phase) * 8)) * 0.05;
+    }
+  }
+  function sendAway(p) {
+    const snap = [Math.round(p.g.position.x / 2) * 2, Math.round(p.g.position.z / 2) * 2];
+    p.g.position.x = snap[0]; p.g.position.z = snap[1]; p.cur = snap;
+    const r = plan(snap, [0, 8]);
+    if (!r) return false;
+    p.path = r.concat([[0, 13.2]]); p.leaving = true; p.wait = 0;
+    return true;
+  }
+
+  // ---------- Feed ----------
+  const feed = document.getElementById('feed');
+  function log(text, kind) {
+    const li = document.createElement('li');
+    li.innerHTML = `<time>${nowS()}</time><span class="${kind}">${text}</span>`;
+    feed.prepend(li);
+    while (feed.children.length > 5) feed.lastChild.remove();
+  }
+
+  // ---------- Ataques à barreira ----------
+  const ATTACKS = ['Força bruta SSH (porta 22)', 'Varredura de portas', 'Tentativa de acesso remoto (porta 3389)', 'Exploração de serviço web (porta 443)'];
+  const randIp = () => [185 + Math.floor(Math.random() * 30), Math.floor(Math.random() * 255), Math.floor(Math.random() * 255), 1 + Math.floor(Math.random() * 253)].join('.');
+  const SIDES = [[1, 0], [-1, 0], [0, -1]];
+  const boltGeo = new THREE.BoxGeometry(0.07, 0.07, 0.55);
+  const boltMat = new THREE.MeshBasicMaterial({ color: 0xff3355 });
+  const spikeGeo = new THREE.ConeGeometry(0.12, 0.45, 4);
+  const shardGeo = new THREE.BoxGeometry(0.17, 0.17, 0.17);
+  const intruders = [], bolts = [];
+  let hitIndex = 0;
+
+  function makeIntruder() {
+    const g = new THREE.Group(), body = new THREE.Group();
+    const coreMat = new THREE.MeshStandardMaterial({ color: 0x16030b, roughness: 0.4, metalness: 0.7, transparent: true });
+    const core = new THREE.Mesh(new THREE.OctahedronGeometry(0.55, 0), coreMat);
+    const edgeMat = new THREE.LineBasicMaterial({ color: 0xff2d55, transparent: true });
+    const eyeMat = new THREE.MeshBasicMaterial({ color: 0xff6688, transparent: true });
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.13, 12, 12), eyeMat); eye.position.z = 0.42;
+    body.add(core, new THREE.LineSegments(new THREE.EdgesGeometry(core.geometry), edgeMat), eye);
+    const spikeMat = new THREE.MeshBasicMaterial({ color: 0xaa1133, transparent: true });
+    [[0.62, 0, -Math.PI / 2], [-0.62, 0, Math.PI / 2], [0, 0.62, 0], [0, -0.62, Math.PI]].forEach(([x, y, rz]) => {
+      const s = new THREE.Mesh(spikeGeo, spikeMat); s.position.set(x, y, 0); s.rotation.z = rz; body.add(s);
+    });
+    g.add(body);
+    const shardMat = new THREE.MeshBasicMaterial({ color: 0xff2d55, transparent: true });
+    const shards = [];
+    for (let i = 0; i < 8; i++) { const m = new THREE.Mesh(shardGeo, shardMat); m.userData.a = i / 8 * Math.PI * 2; m.userData.tilt = i % 2 ? 0.5 : -0.5; g.add(m); shards.push(m); }
+    return { g, body, shards, mats: [coreMat, edgeMat, eyeMat, spikeMat, shardMat] };
+  }
+  function spawnIntruder() {
+    if (intruders.length >= 3) return;
+    const [nx, nz] = pick(SIDES);
+    const px = -nz, pz = nx, along = rand(-7, 7);
+    const at = (dist, y) => new THREE.Vector3(nx * dist + px * along, y, nz * dist + pz * along);
+    const it = makeIntruder();
+    Object.assign(it, { start: at(19, 6), hold: at(13, 3.3), nx, nz, px, pz, along, phase: 'enter', t: 0, shots: 0, nextShot: 0.4, ip: randIp(), kind: pick(ATTACKS) });
+    it.g.position.copy(it.start); it.g.rotation.y = Math.atan2(-nx, -nz); it.g.scale.setScalar(0.01);
+    island.add(it.g); intruders.push(it);
+    log(`${it.kind} vinda de ${it.ip}`, 'warn');
+  }
+  function fire(it) {
+    const b = new THREE.Mesh(boltGeo, boltMat);
+    b.position.copy(it.g.position);
+    const j = rand(-0.9, 0.9);
+    b.userData.target = new THREE.Vector3(it.nx * WALL + it.px * (it.along + j), WALL_H + rand(0.6, 1.8), it.nz * WALL + it.pz * (it.along + j));
+    b.lookAt(island.localToWorld(b.userData.target.clone()));
+    island.add(b); bolts.push(b);
+  }
+  const easeOut = x => 1 - Math.pow(1 - x, 3);
+  function updateAttack(t, dt) {
+    for (let i = intruders.length - 1; i >= 0; i--) {
+      const it = intruders[i];
+      it.t += dt;
+      it.shards.forEach((m, k) => {
+        const a = m.userData.a + t * 2.2, r = it.phase === 'die' ? 0.95 + it.t * 6 : 0.95;
+        m.position.set(Math.cos(a) * r, Math.sin(a) * r * m.userData.tilt + (it.phase === 'die' ? (k - 4) * it.t : 0), Math.sin(a) * r * 0.4);
+        m.rotation.set(t * 3 + k, t * 2, 0);
+      });
+      it.body.rotation.z = Math.sin(t * 3) * 0.25;
+      if (it.phase === 'enter') {
+        const k = Math.min(it.t / 1.4, 1);
+        it.g.position.lerpVectors(it.start, it.hold, easeOut(k)); it.g.scale.setScalar(Math.max(0.01, easeOut(k)));
+        if (k >= 1) { it.phase = 'attack'; it.t = 0; }
+      } else if (it.phase === 'attack') {
+        it.g.position.y = it.hold.y + Math.sin(t * 2.5) * 0.15;
+        it.nextShot -= dt;
+        if (it.nextShot <= 0) { fire(it); it.shots++; it.nextShot = rand(0.55, 0.9); if (it.shots >= 6) { it.phase = 'die'; it.t = 0; } }
+      } else if (it.phase === 'die' && it.t > 0.6) {
+        const k = Math.min((it.t - 0.6) / 0.9, 1);
+        it.body.scale.setScalar(Math.max(0.01, (1 - k) * rand(0.8, 1.2)));
+        it.mats.forEach(m => { m.opacity = 1 - k; });
+        if (k >= 1) { log(`Bloqueado pelo firewall: ${it.ip}`, 'ok'); island.remove(it.g); intruders.splice(i, 1); }
+      }
+    }
+    for (let i = bolts.length - 1; i >= 0; i--) {
+      const b = bolts[i], tgt = b.userData.target, step = 16 * dt;
+      if (b.position.distanceTo(tgt) <= step) {
+        const w = island.localToWorld(tgt.clone());
+        barrierMat.uniforms.uHits.value[hitIndex].set(w.x, w.y, w.z, t);
+        hitIndex = (hitIndex + 1) % MAX_HITS;
+        island.remove(b); bolts.splice(i, 1);
+      } else b.position.add(tgt.clone().sub(b.position).normalize().multiplyScalar(step));
+    }
+  }
+
+  // ---------- Pós-processamento ----------
+  const composer = new THREE.EffectComposer(renderer);
+  composer.addPass(new THREE.RenderPass(scene, camera));
+  composer.addPass(new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.15, 0.5, 0.12));
+
+  // ---------- Painel ----------
+  const info = document.getElementById('info');
+  let selected = null;
+  const stateRow = a => `<dt>Estado</dt><dd style="color:${CSSVAR[a.state]};font-weight:600">${LABELS[a.state]}</dd>`;
+  function renderInfo() {
+    const a = selected;
+    if (!a) { info.innerHTML = '<p class="hint">Clique em uma casa, no castelo, no portão ou em uma pessoa.</p>'; return; }
+    if (a.type === 'house' || a.type === 'forge') {
+      info.innerHTML = `<h2>${a.name}</h2><div class="sub">${a.ip} · ${a.type === 'forge' ? 'oficina (impressora)' : 'casa (computador)'}</div>
+        <dl>${stateRow(a)}<dt>Monitorado</dt><dd>Sim, agente ativo</dd>${a.type === 'forge' ? '' : `<dt>Temp. do processador</dt><dd>${a.cpuTemp} °C</dd>`}</dl>
+        <div class="note">${a.lastEvent}</div>`;
+    } else if (a.type === 'castle') {
+      info.innerHTML = `<h2>${a.name}</h2><div class="sub">${a.ip} · castelo</div>
+        <dl>${stateRow(a)}<dt>Serviços</dt><dd>Arquivos, logins</dd><dt>Temp. do processador</dt><dd>${a.cpuTemp} °C</dd></dl>
+        <div class="note">${a.lastEvent}</div>`;
+    } else if (a.type === 'gate') {
+      const known = people.filter(p => p.type === 'citizen').length, unk = people.filter(p => p.type === 'hooded').length;
+      info.innerHTML = `<h2>${a.name}</h2><div class="sub">${a.ip} · tudo que entra e sai passa por aqui</div>
+        <dl>${stateRow(a)}<dt>Aparelhos conhecidos</dt><dd>${known}</dd><dt>Desconhecidos</dt><dd style="color:var(--idle)">${unk}</dd></dl>
+        <div class="note">${a.lastEvent}</div>`;
+    } else if (a.type === 'tower') {
+      info.innerHTML = `<h2>${a.name}</h2><div class="sub">${a.ip} · torre de vigia</div>
+        <dl>${stateRow(a)}<dt>Gravação</dt><dd>Ativa</dd></dl><div class="note">${a.lastEvent}</div>`;
+    } else if (a.type === 'citizen') {
+      info.innerHTML = `<h2>${a.name}</h2><div class="sub">cidadão · aparelho conhecido</div>
+        <dl><dt>Dono</dt><dd>${a.owner}</dd><dt>Endereço (MAC)</dt><dd>${a.mac}</dd><dt>Conectado desde</dt><dd>${a.since}</dd><dt>Situação</dt><dd style="color:var(--ok)">Autorizado</dd></dl>
+        <div class="note">Aparelho cadastrado. É reconhecido na rede, mas não tem agente de monitoramento instalado.</div>`;
+    } else if (a.type === 'hooded') {
+      info.innerHTML = `<h2>Aparelho desconhecido</h2><div class="sub">encapuzado · não identificado</div>
+        <dl><dt>Endereço (MAC)</dt><dd>${a.mac}</dd><dt>Fabricante</dt><dd>Não identificado</dd><dt>Visto pela 1ª vez</dt><dd>${a.since}</dd><dt>Situação</dt><dd style="color:var(--idle)">Sem autorização</dd></dl>
+        <div class="note">Entrou pelo portão, mas não está no cadastro. Pode ser o celular de um visitante… ou não. Vale investigar.</div>`;
+    }
+  }
+
+  // ---------- Seleção ----------
+  const raycaster = new THREE.Raycaster();
+  raycaster.camera = camera;
+  const mouse = new THREE.Vector2();
+  let hovered = null, downPos = null;
+  function setMouse(ev) {
+    const r = renderer.domElement.getBoundingClientRect();
+    mouse.x = ((ev.clientX - r.left) / r.width) * 2 - 1;
+    mouse.y = -((ev.clientY - r.top) / r.height) * 2 + 1;
+  }
+  function findAsset(o) { while (o) { if (o.userData && o.userData.asset) return o.userData.asset; o = o.parent; } return null; }
+  function pickAt() {
+    raycaster.setFromCamera(mouse, camera);
+    for (const h of raycaster.intersectObjects(pickRoots, true)) { const a = findAsset(h.object); if (a) return a; }
+    return null;
+  }
+  function setHi(a, on) { if (a && a.group) a.group.scale.setScalar(on ? 1.07 : 1); }
+  renderer.domElement.addEventListener('pointermove', ev => {
+    setMouse(ev);
+    const a = pickAt();
+    if (a !== hovered) {
+      if (hovered && hovered !== selected) setHi(hovered, false);
+      hovered = a; if (a) setHi(a, true);
+      renderer.domElement.style.cursor = a ? 'pointer' : 'grab';
+    }
+  });
+  renderer.domElement.addEventListener('pointerdown', ev => { downPos = [ev.clientX, ev.clientY]; });
+  renderer.domElement.addEventListener('pointerup', ev => {
+    if (!downPos) return;
+    const moved = Math.hypot(ev.clientX - downPos[0], ev.clientY - downPos[1]);
+    downPos = null;
+    if (moved > 5) return;
+    setMouse(ev);
+    const a = pickAt();
+    if (selected && selected !== a) setHi(selected, false);
+    selected = a; if (a) setHi(a, true);
+    renderInfo();
+  });
+
+  // ---------- Simulação ----------
+  const EVENTS = {
+    warn: ['Várias tentativas de login falhas', 'Temperatura do processador acima do normal', 'Programa desconhecido instalado'],
+    crit: ['Antivírus desativado', 'Muitos arquivos alterados em pouco tempo', 'Temperatura crítica no processador'],
+    ok: ['Situação normalizada'],
+  };
+  function randomAlert() {
+    const a = pick(assets.filter(x => x.type !== 'gate'));
+    const next = a.state === 'ok' ? (Math.random() < 0.7 ? 'warn' : 'crit') : 'ok';
+    a.state = next; a.lastEvent = pick(EVENTS[next]);
+    a.cpuTemp = next === 'crit' ? 88 + Math.round(Math.random() * 6) : next === 'warn' ? 72 + Math.round(Math.random() * 8) : 45 + Math.round(Math.random() * 10);
+    applyState(a);
+    log(`${a.name}: ${a.lastEvent.toLowerCase()}`, next);
+    if (a === selected) renderInfo();
+  }
+  function hoodedArrives() {
+    if (people.filter(p => p.type === 'hooded').length >= 2) return;
+    spawnPerson(true, true);
+    gateA.lastEvent = 'Aparelho desconhecido se conectou agora';
+    log('Aparelho desconhecido entrou pelo portão', 'idle');
+    if (selected === gateA) renderInfo();
+  }
+  function citizenTraffic() {
+    const inside = people.filter(p => p.type === 'citizen' && !p.leaving);
+    if (away.length && (Math.random() < 0.5 || inside.length < 3)) {
+      const o = away.shift(); spawnPerson(false, true, o); log(`${o[0]} conectou na rede`, 'ok');
+    } else if (inside.length) {
+      const p = pick(inside);
+      if (sendAway(p)) { away.push(p.ownerInfo); log(`${p.name} saiu da rede`, 'ok'); }
+    }
+  }
+  function hoodedLeaves() {
+    const h = people.filter(p => p.type === 'hooded' && !p.leaving);
+    if (h.length && Math.random() < 0.5 && sendAway(h[0])) log('Aparelho desconhecido se desconectou', 'idle');
+  }
+  document.getElementById('btnHooded').addEventListener('click', hoodedArrives);
+  document.getElementById('btnAlert').addEventListener('click', randomAlert);
+  document.getElementById('btnAttack').addEventListener('click', spawnIntruder);
+  setInterval(randomAlert, 7000);
+  setInterval(citizenTraffic, 7000);
+  setInterval(hoodedLeaves, 15000);
+  setTimeout(hoodedArrives, 2500);
+  setTimeout(spawnIntruder, 5000);
+  setInterval(spawnIntruder, 16000);
+  assets.forEach(applyState);
+
+  // ---------- Loop ----------
+  const clock = new THREE.Clock();
+  let lastT = 0;
+  function tick() {
+    const t = clock.getElapsedTime();
+    const dt = Math.min(t - lastT, 0.05); lastT = t;
+    barrierMat.uniforms.uTime.value = reduceMotion ? 0 : t;
+    barrierMat.uniforms.uClock.value = t;
+    if (!reduceMotion) {
+      island.position.y = Math.sin(t * 0.6) * 0.2;
+      island.children.forEach(c => {
+        if (c.userData.float !== undefined) c.position.y += Math.sin(t + c.userData.float) * 0.003;
+        if (c.userData.follow) c.position.copy(c.userData.follow.position);
+      });
+      assets.forEach((a, ai) => a.flags.forEach((f, i) => {
+        f.rotation.y = Math.sin(t * 2 + i + ai) * 0.3;
+        const m = a.flagMats[i];
+        m.opacity = Math.random() < 0.02 ? 0.2 : 0.7 + Math.sin(t * 6 + ai) * 0.08;
+        f.position.x = (Math.random() < 0.015 ? 0.33 : 0.27);
+      }));
+      halo.rotation.z = t * 0.4; halo.position.y = 4.9 + Math.sin(t * 1.5) * 0.12;
+      walls.children.concat(towerA.group.children).forEach(c => { if (c.userData.spin) { c.rotation.y = t; } });
+    }
+    trails.forEach(tr => {
+      const speed = tr.a.state === 'crit' ? 1.6 : tr.a.state === 'warn' ? 1.0 : 0.6;
+      const d = (reduceMotion ? 0.5 : (tr.phase + t * speed / tr.total * 4) % 1) * tr.total;
+      if (d < tr.len1) tr.pulse.position.lerpVectors(tr.pts[0], tr.pts[1], d / tr.len1);
+      else tr.pulse.position.lerpVectors(tr.pts[1], tr.pts[2], (d - tr.len1) / (tr.total - tr.len1));
+    });
+    assets.forEach(a => {
+      if (a.state === 'crit' && !reduceMotion) {
+        const c = Math.sin(t * 9) > -0.2 ? COLORS.crit : 0x551020;
+        a.lightMats.forEach(m => m.color.setHex(c)); a.edgeMat.color.setHex(c);
+      }
+    });
+    updatePeople(t, dt);
+    updateAttack(t, dt);
+    controls.update();
+    composer.render();
+    requestAnimationFrame(tick);
+  }
+  tick();
+
+  window.addEventListener('resize', () => {
+    const w = window.innerWidth, h = window.innerHeight;
+    camera.aspect = w / h; camera.updateProjectionMatrix();
+    renderer.setSize(w, h); composer.setSize(w, h);
+  });
+})();
+</script>
+</body>
+</html>
